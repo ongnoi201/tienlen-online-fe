@@ -1,0 +1,179 @@
+/*==== LOGIN, REGISTER CSS ====*/
+.login-container, .register-container {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 500px;
+    padding: 20px;
+    border-radius: 15px;
+    background-color: rgb(255, 255, 255);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+
+}
+
+.login-container form, .register-container form {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.login-container form input, .register-container form input {
+    padding: 12px;
+    width: 100%;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    box-sizing: border-box;
+    outline: none;
+    font-size: 17px;
+}
+
+.login-container form button, .register-container form button {
+    padding: 12px;
+    background-color: #0a972e;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 17px;
+}
+
+.register-link, .login-link {
+    color: #ccc;
+    font-size: 16px;
+    margin-top: 40px;
+    text-align: center;
+}
+
+.register-link button, .login-link button {
+    background: none;
+    color: #2536ce;
+    font-size: 16px;
+    border: none;
+    cursor: pointer;
+}
+
+/* ===== PROFILE CSS ===== */
+.profile-container {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 400px;
+    height: 95%;
+    border-radius: 15px;
+    background-color: rgb(255, 255, 255);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+.profile-container img {
+    position: absolute;
+    top: 0;
+    width: 100%;
+    height: 250px;
+    box-sizing: border-box;
+    object-fit: cover;
+}
+
+.information{
+    position: absolute;
+    top: 250px;
+    width: 100%;
+    box-sizing: border-box;
+    text-align: center;
+}
+
+.user-name {
+    display: flex;
+    justify-content: space-between;
+    padding: 0 30px;
+}
+
+.profile-actions {
+    position: absolute;
+    bottom: 30px;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+}
+
+.profile-actions button {
+    padding: 10px 20px;
+    color: #000;
+    background-color: #fff;
+    border: 1px solid #9c9c9c;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 16px;
+}
+
+.profile-container form {
+    position: absolute;
+    top: 300px;
+    width: 50%;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.profile-container form input {
+    padding: 5px;
+    width: 100%;
+    border: 1px solid #9c9c9c;
+    border-radius: 5px;
+    box-sizing: border-box;
+    outline: none;
+    font-size: 16px;
+}
+
+.btn-edit-profile{
+    display: flex;
+    justify-content: right;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+}
+
+.profile-container form button {
+    padding: 5px 8px;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 16px;
+}
+
+.btn-save {
+    background-color: #0a972e;
+}
+
+.btn-cancle {
+    background-color: #c00;
+}
+
+.btn-login {
+    position: absolute;
+    top: 20px;
+    right: -2px;
+    padding: 5px;
+    padding-top: 0px;
+    color: white;
+    background-color: #0a972e;
+    border: 4px solid #ffffff;
+    border-right: 0;
+    border-top-left-radius: 20px;
+    border-bottom-left-radius: 20px;
+    cursor: pointer;
+    font-size: 16px;
+}
