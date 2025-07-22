@@ -759,6 +759,7 @@ function App() {
                         />
                         <button onClick={handleCreateRoom} disabled={!!roomId} className="create-room-btn">Tạo Phòng</button>
                         <button className='btn-personal' onClick={() => navigate('/personal')}>Trang cá nhân</button>
+                        <button className='btn-reload' onClick={() => window.location.reload()>reload</button>
                     </div>
 
                     {!roomId && (
