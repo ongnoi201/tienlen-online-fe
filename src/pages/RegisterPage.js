@@ -9,6 +9,9 @@ function RegisterPage() {
     const [password, setPassword] = useState('');
     const navigate = useNavigate();
 
+    window.alertify.set('notifier','position', 'top-left');
+    window.alertify.set('notifier', 'delay', 3);
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         const res = await register({ name, username, password });

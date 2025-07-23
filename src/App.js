@@ -11,41 +11,56 @@ function App() {
     const [playedCards, setPlayedCards] = useState([]);
     const [currentTurn, setCurrentTurn] = useState(null);
     const [gameStarted, setGameStarted] = useState(false);
-    const [myId] = useState(() => {
-        const user = JSON.parse(localStorage.getItem('user')) || {};
-        return user._id || user.id || '';
-    }); // Sửa: luôn lấy từ userId, không lấy từ socket.id
+    const user = JSON.parse(localStorage.getItem('user')) || {};
+    const myId = user._id || user.id || '';
+    const token = user.token || '';
     const [roomId, setRoomId] = useState(null);
     const [rooms, setRooms] = useState([]);
     const [playerName, setPlayerName] = useState('new ' + Math.floor(Math.random() * 1000));
     const [selectedCards, setSelectedCards] = useState([]);
     const [selectedRoom, setSelectedRoom] = useState(true);
     const [hasPassedThisRound, setHasPassedThisRound] = useState(false);
-    const [finishedPlayers, setFinishedPlayers] = useState([]); // ✅ Thêm
-    const [showRanking, setShowRanking] = useState(false); // ✅ Hiển thị thứ hạng
+    const [finishedPlayers, setFinishedPlayers] = useState([]);
+    const [showRanking, setShowRanking] = useState(false);
     const [myScore, setMyScore] = useState(0);
-    const [dealing, setDealing] = useState(false); // Thêm state hiệu ứng chia bài
-    const [firstTurnPlayerId, setFirstTurnPlayerId] = useState(null); // Thêm state lưu người đánh đầu tiên
-    const user = JSON.parse(localStorage.getItem('user')) || {};
-    const token = user.token || '';
-    const userId = user._id || user.id || '';
+    const [dealing, setDealing] = useState(false);
+    const [firstTurnPlayerId, setFirstTurnPlayerId] = useState(null);
     const navigate = useNavigate();
     const tableRef = useRef(null);
-    const tableContentRef = useRef(null); // Thêm ref cho table-content
-    const avatarRefs = useRef({}); // Lưu ref tới avatar từng người chơi
+    const tableContentRef = useRef(null);
+    const avatarRefs = useRef({});
 
-    // State để lưu hiệu ứng đánh bài
     const [flyingCards, setFlyingCards] = useState([]);
-    // Thêm state lưu các lá bài bản thân chuẩn bị đánh (để hiệu ứng flying card)
     const [pendingMyPlayCards, setPendingMyPlayCards] = useState(null);
+
+    //Thêm đoạn này
+    const [peerConnections, setPeerConnections] = useState({});
+    const localStreamRef = useRef(null);
+    const [micEnabled, setMicEnabled] = useState(true);
+
+
+    window.alertify.set('notifier', 'position', 'top-left');
+    window.alertify.set('notifier', 'delay', 3);
+
+    useEffect(() => {
+        if (token) {
+            socket.emit('init_player', { token });
+        }
+    }, [token]);
+
+    useEffect(() => {
+        return () => {
+            cleanupVoiceChat();
+        };
+    }, []);
 
     useEffect(() => {
         async function fetchUser() {
-            const res = await getUser(userId, token);
+            const res = await getUser(myId, token);
             if (res && res._id) setPlayerName(res.name);
         }
         fetchUser();
-    }, [userId, token]);
+    }, [myId, token]);
 
     useEffect(() => {
         function onRoomCreated({ roomId }) {
@@ -76,10 +91,12 @@ function App() {
             setCurrentTurn(null);
             setSelectedCards([]);
             setHasPassedThisRound(false);
-            // Đừng reset finishedPlayers và showRanking ở đây nữa!
-            // setFinishedPlayers([]);
-            // setShowRanking(false);
         }
+
+        // Thêm đoạn này
+        navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+            localStreamRef.current = stream;
+        });
 
         function onStartGame(data) {
             setGameStarted(true);
@@ -87,15 +104,15 @@ function App() {
             setPlayedCards([]);
             setCurrentTurn(data.currentTurn);
             setHasPassedThisRound(false);
-            setFinishedPlayers([]); // <-- Reset xếp hạng khi bắt đầu ván mới
-            setShowRanking(false);  // <-- Ẩn bảng xếp hạng khi bắt đầu ván mới
+            setFinishedPlayers([]);
+            setShowRanking(false);
             setDealing(true);
             playSound('deal');
 
             setFirstTurnPlayerId(data.currentTurn);
             setTimeout(() => {
                 setMyCards(data.hand || []);
-                stopSound('deal'); // Dừng âm thanh chia bài
+                stopSound('deal');
                 setDealing(false);
             }, 3000);
         }
@@ -106,7 +123,7 @@ function App() {
         }
 
         function onPassTurn({ playerId }) {
-            playSound('passTurn'); // <-- Phát âm thanh khi bất kỳ ai bỏ qua
+            playSound('passTurn');
         }
 
         function onPlayCard({ playerId, cards }) {
@@ -125,10 +142,9 @@ function App() {
 
         function onGameOver({ loserId, ranking }) {
             if (Array.isArray(ranking) && ranking.length > 0) {
-                setFinishedPlayers(ranking); // <-- dùng thứ hạng từ server nếu có
+                setFinishedPlayers(ranking);
             } else {
                 setFinishedPlayers(prevFinished => {
-                    // Nếu loserId chưa có trong danh sách, thêm vào cuối
                     if (!prevFinished.includes(loserId)) {
                         return [...prevFinished, loserId];
                     }
@@ -139,7 +155,6 @@ function App() {
             setPlayers(prev => prev.map(p => ({ ...p, isReady: false })));
             setGameStarted(false);
 
-            // Đảm bảo hiển thị ranking
             setShowRanking(true);
         }
 
@@ -164,8 +179,8 @@ function App() {
                 setGameStarted(false);
                 setPlayedCards([]);
                 setMyCards([]);
+                window.alertify.success('Phòng đã bị xóa!');
             }
-            alert('Phòng đã bị xóa!');
         }
 
         function onLeftRoom({ roomId, playerId }) {
@@ -176,17 +191,18 @@ function App() {
                 setPlayedCards([]);
                 setMyCards([]);
                 setCurrentTurn(null);
-                alert('Bạn đã rời phòng!');
+                socket.emit('get_rooms');
+                window.alertify.success('Một người đã rời phòng!');
             }
         }
 
         function onNewRound({ currentTurn }) {
-            setPlayedCards([]); // ✅ Clear bàn
-            setCurrentTurn(currentTurn); // ✅ Cập nhật lượt mới
+            setPlayedCards([]);
+            setCurrentTurn(currentTurn);
             if (currentTurn === myId) {
-                setHasPassedThisRound(false); // ✅ Chỉ reset nếu là lượt mình
+                setHasPassedThisRound(false);
             } else {
-                setHasPassedThisRound(true); // 🔒 Chặn người khác chơi
+                setHasPassedThisRound(true);
             }
         }
 
@@ -197,17 +213,115 @@ function App() {
         socket.on('your_turn', onYourTurn);
         socket.on('play_card', onPlayCard);
         socket.on('game_over', onGameOver);
-        socket.on('player_finished', onPlayerFinished); // ✅ mới
+        socket.on('player_finished', onPlayerFinished);
         socket.on('score_update', onScoreUpdate);
         socket.on('error', onError);
         socket.on('new_round', onNewRound);
         socket.on('rooms_list', onRoomsList);
         socket.on('room_deleted', onRoomDeleted);
         socket.on('left_room', onLeftRoom);
+        socket.on('new_peer', async ({ peerId }) => {
+            if (!localStreamRef.current) return;
+            if (peerConnections[peerId]) return;
+
+            const pc = new RTCPeerConnection({
+                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+            });
+
+            localStreamRef.current.getTracks().forEach(track => pc.addTrack(track, localStreamRef.current));
+
+            pc.onicecandidate = event => {
+                if (event.candidate) {
+                    socket.emit('signal', { targetId: peerId, data: { candidate: event.candidate } });
+                }
+            };
+
+            pc.ontrack = event => {
+                const remoteAudio = new Audio();
+                remoteAudio.srcObject = event.streams[0];
+                remoteAudio.autoplay = true;
+                remoteAudio.play();
+            };
+
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            socket.emit('signal', { targetId: peerId, data: { sdp: pc.localDescription } });
+
+            setPeerConnections(prev => ({ ...prev, [peerId]: pc }));
+        });
+
+        socket.on("signal", async ({ sourceId, data }) => {
+            let pc = peerConnections[sourceId];
+
+            // Nếu đã có nhưng bị đóng → bỏ qua
+            if (pc && pc.signalingState === "closed") return;
+
+            // Nếu chưa có thì tạo mới
+            if (!pc) {
+                pc = new RTCPeerConnection({
+                    iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+                });
+
+                // Thêm track, ICE, track listener...
+                if (localStreamRef.current) {
+                    localStreamRef.current.getTracks().forEach((track) =>
+                        pc.addTrack(track, localStreamRef.current)
+                    );
+                }
+
+                pc.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        socket.emit("signal", {
+                            targetId: sourceId,
+                            data: { candidate: event.candidate },
+                        });
+                    }
+                };
+
+                pc.ontrack = (event) => {
+                    const remoteAudio = new Audio();
+                    remoteAudio.srcObject = event.streams[0];
+                    remoteAudio.autoplay = true;
+                    remoteAudio.play();
+                };
+
+                setPeerConnections((prev) => ({ ...prev, [sourceId]: pc }));
+            }
+
+            try {
+                if (data.sdp) {
+                    const desc = new RTCSessionDescription(data.sdp);
+
+                    if (desc.type === "offer") {
+                        await pc.setRemoteDescription(desc); // 🟢 Quan trọng!
+                        const answer = await pc.createAnswer();
+                        await pc.setLocalDescription(answer); // chỉ hợp lệ sau khi có remote offer
+                        socket.emit("signal", {
+                            targetId: sourceId,
+                            data: { sdp: pc.localDescription },
+                        });
+                    } else if (desc.type === "answer") {
+                        // Chỉ set answer nếu local đang là offer
+                        if (pc.signalingState === "have-local-offer") {
+                            await pc.setRemoteDescription(desc);
+                        } else {
+                            console.warn("⚠️ Skipping unexpected answer, state:", pc.signalingState);
+                        }
+                    }
+                }
+
+                if (data.candidate) {
+                    await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+                }
+            } catch (err) {
+                console.error("❌ Error handling signal", err);
+            }
+        });
+
+
         socket.on('pass_turn', onPassTurn);
         socket.on('update_players', ({ players }) => {
             setPlayers(players || []);
-            // KHÔNG setShowRanking(false); // Giữ nguyên, không ẩn bảng xếp hạng ở đây
         });
 
         let interval = null;
@@ -236,13 +350,11 @@ function App() {
         };
     }, [roomId, myId, token]);
 
-    // Khi vào phòng, lấy điểm từ players (nếu server trả về)
     useEffect(() => {
         const me = players.find(p => p.id === myId);
         if (me && typeof me.score === 'number') setMyScore(me.score);
     }, [players, myId]);
 
-    // Tính vị trí avatar trên bàn cho hiệu ứng chia bài
     function getAvatarPositions() {
         const positions = [];
         if (!tableRef.current) return positions;
@@ -261,18 +373,16 @@ function App() {
         return positions;
     }
 
-    // Render hiệu ứng chia bài
     function renderDealingAnimation() {
         const numCards = 13;
         const positions = getAvatarPositions();
         const totalPlayers = orderedPlayers.length;
         const cards = [];
-        // Lấy tâm table (khung bàn) làm điểm xuất phát, căn giữa lá bài
         let startLeft = 0, startTop = 0;
         if (tableRef.current) {
             const tableRect = tableRef.current.getBoundingClientRect();
-            startLeft = tableRect.width / 2 - 16; // 16 = 32/2 (nửa width lá bài)
-            startTop = tableRect.height / 2 - 22; // 22 = 44/2 (nửa height lá bài)
+            startLeft = tableRect.width / 2 - 16;
+            startTop = tableRect.height / 2 - 22;
         } else {
             startLeft = 260 - 16;
             startTop = 100 - 22;
@@ -304,9 +414,8 @@ function App() {
         );
     }
 
-    // Hàm lấy vị trí DOM của lá bài của mình (ở thanh dưới)
-    function getMyCardPosition(card) {
-        // Lấy vị trí trung tâm avatar của mình (img)
+    // Wrap getMyCardPosition in useCallback to avoid useEffect warning
+    const getMyCardPosition = React.useCallback((card) => {
         const myAvatarRef = avatarRefs.current[myId];
         if (!myAvatarRef?.current) return null;
         const img = myAvatarRef.current.querySelector('.person-img');
@@ -317,9 +426,8 @@ function App() {
             x: rect.left + rect.width / 2 - tableContentRect.left,
             y: rect.top + rect.height / 2 - tableContentRect.top
         };
-    }
+    }, [avatarRefs, myId, tableContentRef]);
 
-    // Hàm lấy vị trí DOM của mặt sau bài của đối thủ
     function getOpponentCardBackPosition(playerId) {
         const box = avatarRefs.current[playerId]?.current;
         if (!box) return null;
@@ -334,7 +442,6 @@ function App() {
         };
     }
 
-    // Hàm lấy vị trí trung tâm .table-content (đích đến)
     function getTableContentCenter() {
         if (!tableContentRef.current) return { x: 0, y: 0 };
         const rect = tableContentRef.current.getBoundingClientRect();
@@ -344,18 +451,16 @@ function App() {
         };
     }
 
-    // Khi bản thân bấm Đánh, lưu lại các lá bài sẽ đánh để hiệu ứng
     function handlePlayCard() {
         if (currentTurn !== myId || hasPassedThisRound || selectedCards.length === 0) return;
         const cardsToPlay = [...selectedCards];
-        setPendingMyPlayCards(cardsToPlay); // Lưu lại để hiệu ứng flying card
+        setPendingMyPlayCards(cardsToPlay);
         socket.emit('play_card', { cards: cardsToPlay });
         setSelectedCards([]);
         setHasPassedThisRound(false);
     }
 
 
-    // Hiệu ứng đánh bài: khi có play_card mới
     useEffect(() => {
         if (playedCards.length === 0) return;
 
@@ -366,7 +471,6 @@ function App() {
         const isMe = playerId === myId;
         const dest = getTableContentCenter();
 
-        // Nếu là bản thân, ưu tiên dùng pendingMyPlayCards để lấy vị trí DOM
         let cardsForEffect = cards;
         if (isMe && pendingMyPlayCards && pendingMyPlayCards.length === cards.length) {
             cardsForEffect = pendingMyPlayCards;
@@ -375,7 +479,6 @@ function App() {
         const newFlying = cardsForEffect.map((card, i) => {
             let from = null;
             if (isMe) {
-                // Nếu là bản thân, lấy vị trí DOM của lá bài từ pendingMyPlayCards
                 from = getMyCardPosition(card);
             } else {
                 from = getOpponentCardBackPosition(playerId);
@@ -396,40 +499,30 @@ function App() {
             setTimeout(() => {
                 setFlyingCards(prev => prev.slice(newFlying.length));
                 setShowPlayedCards(true);
-                // Sau khi hiệu ứng xong, reset pendingMyPlayCards nếu là bản thân
                 if (isMe) setPendingMyPlayCards(null);
             }, 700 + newFlying.length * 80);
         } else {
             setShowPlayedCards(true);
             if (isMe) setPendingMyPlayCards(null);
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [playedCards]);
+    }, [playedCards, getMyCardPosition, myId, pendingMyPlayCards]);
 
-    // State để điều khiển việc hiển thị lá bài ở giữa bàn
     const [showPlayedCards, setShowPlayedCards] = useState(true);
 
-    // Render hiệu ứng lá bài bay
     function renderFlyingCards() {
-        // Các thông số cho hiệu ứng chồng và bung ra
         const cardWidth = 32;
-        const overlap = 0.7; // 70% chồng lên
-        const spread = 60;   // khoảng cách bung ra giữa các lá ở đích
+        const overlap = 0.7;
+        const spread = 55;
 
-        // Tính offset chồng cho từng lá ở vị trí xuất phát
         return flyingCards.map((item, idx, arr) => {
             const { from, to, card, key, delay } = item;
             const n = arr.length;
-            // Tìm index của lá này trong flyingCards theo key
             const i = idx;
-            // Offset chồng ở vị trí xuất phát
             const stackOffsetX = ((i - (n - 1) / 2) * cardWidth * (1 - overlap));
             const stackOffsetY = 0;
-            // Offset bung ra ở vị trí đích
             const spreadOffsetX = ((i - (n - 1) / 2) * spread);
             const spreadOffsetY = 0 - 10;
 
-            // Tính delta bay (từ vị trí chồng đến vị trí bung ra)
             const dx = (to.x - from.x) + (spreadOffsetX - stackOffsetX);
             const dy = (to.y - from.y) + (spreadOffsetY - stackOffsetY);
 
@@ -438,8 +531,8 @@ function App() {
                     key={key}
                     className="flying-card-anim"
                     style={{
-                        left: from.x + stackOffsetX - 11, // 16 = 32/2 (nửa width lá bài)
-                        top: from.y + stackOffsetY,  // 22 = 44/2 (nửa height lá bài)
+                        left: from.x + stackOffsetX - 11,
+                        top: from.y + stackOffsetY,
                         transform: 'translate(0px, 0px) scale(1)',
                         transition: `transform 0.5s cubic-bezier(.4,2,.6,1) ${delay}ms`,
                         zIndex: 99990000,
@@ -505,12 +598,14 @@ function App() {
     }
 
     function handleLeaveRoom() {
+        cleanupVoiceChat();
         setSelectedRoom(true);
         socket.emit('leave_room');
+        socket.emit('get_rooms');
     }
 
     function handleReady() {
-        setShowRanking(false); // <-- Ẩn bảng xếp hạng khi nhấn Sẵn sàng
+        setShowRanking(false);
         setFinishedPlayers([]);
         setPlayedCards([]);
         setMyCards([]);
@@ -533,28 +628,50 @@ function App() {
 
     const posMap = ['table-player-bottom', 'table-player-right', 'table-player-top', 'table-player-left'];
     const allReady = players.length > 1 && players.every(p => p.isReady);
-    // Tạo playerRanks từ finishedPlayers (thứ tự ranking từ server)
     const playerRanks = {};
     let rankingList = [...finishedPlayers];
-    // Không tự động bổ sung người còn lại vào rankingList nữa!
-    // rankingList phải luôn là thứ tự đúng từ server
     rankingList.forEach((id, index) => {
         playerRanks[id] = index + 1;
     });
 
-    // Chuẩn bị ref cho từng avatar
     orderedPlayers.forEach(p => {
         if (!avatarRefs.current[p.id]) {
             avatarRefs.current[p.id] = React.createRef();
         }
     });
 
-    // Xác định có phải lượt đầu tiên của ván không
     const isFirstTurn = playedCards.length === 0 && currentTurn === firstTurnPlayerId;
-
     console.log(allReady);
 
+    //thêm đoạn này
+    const cleanupVoiceChat = () => {
+        Object.values(peerConnections).forEach((pc) => {
+            try {
+                if (pc.signalingState !== "closed") {
+                    pc.close();
+                }
+            } catch (e) {
+                console.warn("Error closing pc", e);
+            }
+        });
 
+        setPeerConnections({});
+        if (localStreamRef.current) {
+            localStreamRef.current.getTracks().forEach((track) => track.stop());
+            localStreamRef.current = null;
+        }
+    };
+
+
+
+    function toggleMic() {
+        if (localStreamRef.current) {
+            localStreamRef.current.getAudioTracks().forEach(track => {
+                track.enabled = !track.enabled;
+                setMicEnabled(track.enabled);
+            });
+        }
+    }
 
     return (
         <div className="app-container">
@@ -577,11 +694,9 @@ function App() {
             <div className='table' ref={tableRef}>
                 <div className='table-frame'></div>
                 <div className='table-content' ref={tableContentRef}>
-                    {/* Hiệu ứng đánh bài */}
                     {renderFlyingCards()}
                     {playedCards.length > 0 && showPlayedCards && (
                         <div className="played-cards-center">
-                            {/* Sắp xếp các lá bài được đánh ra theo giá trị tăng dần, chất ♠ < ♣ < ♦ < ♥ */}
                             {(() => {
                                 const suitOrder = { '♠': 1, '♣': 2, '♦': 3, '♥': 4 };
                                 const lastCards = playedCards[playedCards.length - 1].cards.slice().sort(
@@ -626,7 +741,6 @@ function App() {
                                     />
                                     <span className="person-name">
                                         {playerName}
-                                        {/* Hiển thị điểm của mình */}
                                         <span style={{ marginLeft: 8, color: '#ffd700', fontWeight: 'bold' }}>
                                             {myScore > 0 ? `${myScore}🟡` : myScore + '🟡'}
                                         </span>
@@ -721,7 +835,6 @@ function App() {
                                             />
                                             <span className="person-name">
                                                 {p.name || p.id.slice(0, 6)}
-                                                {/* (Tùy chọn) Hiển thị điểm nếu server trả về */}
                                                 {typeof p.score === 'number' &&
                                                     <span style={{ marginLeft: 8, color: '#ffd700', fontWeight: 'bold' }}>
                                                         {p.score > 0 ? `${p.score}🟡` : p.score + '🟡'}
@@ -787,8 +900,13 @@ function App() {
             )}
 
             <div className="room-id-row">
-                {roomId && !showRanking && <p><strong>Mã phòng: </strong> {roomId ? roomId.slice(0, 6) : 'Chưa có'}</p>}
+                {/* {roomId && !showRanking && <p><strong>Mã phòng: </strong> {roomId ? roomId.slice(0, 6) : 'Chưa có'}</p>} */}
                 {roomId && <button onClick={handleLeaveRoom} className="leave-room-btn">Rời phòng</button>}
+                {roomId && (
+                    <button onClick={toggleMic}>
+                        {micEnabled ? 'Tắt Mic' : 'Bật Mic'}
+                    </button>
+                )}
             </div>
         </div>
     );

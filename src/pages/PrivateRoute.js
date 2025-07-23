@@ -4,11 +4,11 @@ import { ROUTERS } from '../utils/router';
 
 
 const PrivateRoute = ({ children }) => {
-  const user = JSON.parse(localStorage.getItem('user'));
-  if (!user) {
-    return <Navigate to={ROUTERS.LOGIN} />;
-  }
-  return children;
+    const user = JSON.parse(localStorage.getItem('user'));
+    if (!user) {
+        return <Navigate to={ROUTERS.LOGIN} />;
+    }
+    return children;
 };
 
 export default PrivateRoute;

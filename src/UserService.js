@@ -1,4 +1,4 @@
-const API_URL = 'https://tienlen-online-be.onrender.com/api';
+const API_URL = 'http://localhost:3001/api';
 
 export const register = async (data) => {
     const res = await fetch(`${API_URL}/register`, {
