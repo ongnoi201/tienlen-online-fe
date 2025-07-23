@@ -230,11 +230,11 @@ function App() {
             });
 
             // Add local audio tracks
-            localStreamRef.current.getTracks().forEach((track) =>
-                pc.addTrack(track, localStreamRef.current)
-            );
+            localStreamRef.current.getTracks().forEach((track) => {
+                pc.addTrack(track, localStreamRef.current);
+            });
 
-            // ICE Candidate
+            // Setup event handlers
             pc.onicecandidate = (event) => {
                 if (event.candidate) {
                     socket.emit('signal', {
@@ -244,7 +244,6 @@ function App() {
                 }
             };
 
-            // Track handler
             pc.ontrack = (event) => {
                 const remoteAudio = new Audio();
                 remoteAudio.srcObject = event.streams[0];
@@ -252,16 +251,20 @@ function App() {
                 remoteAudio.play();
             };
 
-            setPeerConnections((prev) => ({ ...prev, [peerId]: pc }));
-
-            // ❗ Xác định ai tạo offer
+            // Determine initiator (only one side should offer)
             const isInitiator = myId > peerId;
+
+            // Save connection and role
+            setPeerConnections((prev) => ({
+                ...prev,
+                [peerId]: { pc, isInitiator },
+            }));
 
             if (isInitiator) {
                 try {
                     const offer = await pc.createOffer();
                     await pc.setLocalDescription(offer);
-                    socket.emit("signal", {
+                    socket.emit('signal', {
                         targetId: peerId,
                         data: { sdp: pc.localDescription },
                     });
@@ -272,16 +275,16 @@ function App() {
         });
 
 
-        socket.on("signal", async ({ sourceId, data }) => {
-            let pc = peerConnections[sourceId];
 
-            // Nếu chưa có connection → tạo mới
-            if (!pc) {
-                pc = new RTCPeerConnection({
+        socket.on('signal', async ({ sourceId, data }) => {
+            let conn = peerConnections[sourceId];
+
+            // Nếu chưa tồn tại → tạo mới và lưu lại
+            if (!conn) {
+                const pc = new RTCPeerConnection({
                     iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
                 });
 
-                // Gắn local stream
                 if (localStreamRef.current) {
                     localStreamRef.current.getTracks().forEach((track) =>
                         pc.addTrack(track, localStreamRef.current)
@@ -304,11 +307,18 @@ function App() {
                     remoteAudio.play();
                 };
 
-                setPeerConnections((prev) => ({ ...prev, [sourceId]: pc }));
+                // Tạm thời chưa biết role → giả định isInitiator = false
+                conn = { pc, isInitiator: false };
+
+                setPeerConnections((prev) => ({
+                    ...prev,
+                    [sourceId]: conn,
+                }));
             }
 
+            const { pc, isInitiator } = conn;
+
             try {
-                // 👉 SDP handling
                 if (data.sdp) {
                     const desc = new RTCSessionDescription(data.sdp);
 
@@ -320,42 +330,27 @@ function App() {
                             targetId: sourceId,
                             data: { sdp: pc.localDescription },
                         });
-                    } else if (desc.type === "answer") {
-                        if (pc.signalingState === "have-local-offer") {
+                    }
+
+                    if (desc.type === "answer") {
+                        if (isInitiator && pc.signalingState === "have-local-offer") {
                             await pc.setRemoteDescription(desc);
                         } else {
-                            console.warn("⚠️ Skipping unexpected answer, state:", pc.signalingState);
+                            console.warn("⚠️ Skipping answer (not initiator or wrong state)", isInitiator, pc.signalingState);
                         }
                     }
                 }
 
-                // 👉 ICE candidate handling
                 if (data.candidate) {
-                    if (pc.remoteDescription && pc.remoteDescription.type) {
+                    if (pc.remoteDescription) {
                         await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-                    } else {
-                        // Candidate đến trước khi SDP → lưu tạm
-                        if (!pendingCandidatesRef.current[sourceId]) {
-                            pendingCandidatesRef.current[sourceId] = [];
-                        }
-                        pendingCandidatesRef.current[sourceId].push(
-                            new RTCIceCandidate(data.candidate)
-                        );
                     }
                 }
-
-                // Nếu vừa set xong remoteDescription → thêm các candidate đệm
-                if (pc.remoteDescription && pendingCandidatesRef.current[sourceId]) {
-                    for (const cand of pendingCandidatesRef.current[sourceId]) {
-                        await pc.addIceCandidate(cand);
-                    }
-                    delete pendingCandidatesRef.current[sourceId];
-                }
-
             } catch (err) {
                 console.error("❌ Lỗi khi xử lý signal:", err);
             }
         });
+
 
 
 
