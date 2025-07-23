@@ -666,31 +666,21 @@ function App() {
 
     function toggleMic() {
         if (localStreamRef.current) {
-            localStreamRef.current.getAudioTracks().forEach(track => {
-                track.enabled = !track.enabled;
-                setMicEnabled(track.enabled);
+            const tracks = localStreamRef.current.getAudioTracks();
+            const enabled = tracks[0]?.enabled;
+            const newEnabled = !enabled;
+
+            tracks.forEach(track => {
+                track.enabled = newEnabled;
             });
+
+            setMicEnabled(newEnabled);
         }
     }
 
+
     return (
         <div className="app-container">
-            {showRanking && rankingList.length > 0 && (
-                <div className="ranking-box">
-                    <h3>Xếp hạng</h3>
-                    <ul>
-                        {rankingList.map((id, index) => {
-                            const player = players.find(p => p.id === id);
-                            return (
-                                <li key={id}>
-                                    {index + 1}. {player?.name || id.slice(0, 6)}
-                                </li>
-                            );
-                        })}
-                    </ul>
-                </div>
-            )}
-
             <div className='table' ref={tableRef}>
                 <div className='table-frame'></div>
                 <div className='table-content' ref={tableContentRef}>
