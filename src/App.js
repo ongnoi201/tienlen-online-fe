@@ -221,46 +221,67 @@ function App() {
         socket.on('rooms_list', onRoomsList);
         socket.on('room_deleted', onRoomDeleted);
         socket.on('left_room', onLeftRoom);
+
         socket.on('new_peer', async ({ peerId }) => {
-            if (!localStreamRef.current) return;
-            if (peerConnections[peerId]) return;
+            if (!localStreamRef.current || peerConnections[peerId]) return;
 
             const pc = new RTCPeerConnection({
-                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
             });
 
-            localStreamRef.current.getTracks().forEach(track => pc.addTrack(track, localStreamRef.current));
+            // Add local audio tracks
+            localStreamRef.current.getTracks().forEach((track) =>
+                pc.addTrack(track, localStreamRef.current)
+            );
 
-            pc.onicecandidate = event => {
+            // ICE Candidate
+            pc.onicecandidate = (event) => {
                 if (event.candidate) {
-                    socket.emit('signal', { targetId: peerId, data: { candidate: event.candidate } });
+                    socket.emit('signal', {
+                        targetId: peerId,
+                        data: { candidate: event.candidate },
+                    });
                 }
             };
 
-            pc.ontrack = event => {
+            // Track handler
+            pc.ontrack = (event) => {
                 const remoteAudio = new Audio();
                 remoteAudio.srcObject = event.streams[0];
                 remoteAudio.autoplay = true;
                 remoteAudio.play();
             };
 
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            socket.emit('signal', { targetId: peerId, data: { sdp: pc.localDescription } });
+            setPeerConnections((prev) => ({ ...prev, [peerId]: pc }));
 
-            setPeerConnections(prev => ({ ...prev, [peerId]: pc }));
+            // ❗ Xác định ai tạo offer
+            const isInitiator = myId > peerId;
+
+            if (isInitiator) {
+                try {
+                    const offer = await pc.createOffer();
+                    await pc.setLocalDescription(offer);
+                    socket.emit("signal", {
+                        targetId: peerId,
+                        data: { sdp: pc.localDescription },
+                    });
+                } catch (err) {
+                    console.error("❌ Error creating offer:", err);
+                }
+            }
         });
+
 
         socket.on("signal", async ({ sourceId, data }) => {
             let pc = peerConnections[sourceId];
 
-            if (pc && pc.signalingState === "closed") return;
-
+            // Nếu chưa có connection → tạo mới
             if (!pc) {
                 pc = new RTCPeerConnection({
                     iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
                 });
 
+                // Gắn local stream
                 if (localStreamRef.current) {
                     localStreamRef.current.getTracks().forEach((track) =>
                         pc.addTrack(track, localStreamRef.current)
@@ -287,57 +308,52 @@ function App() {
             }
 
             try {
+                // 👉 SDP handling
                 if (data.sdp) {
                     const desc = new RTCSessionDescription(data.sdp);
 
                     if (desc.type === "offer") {
                         await pc.setRemoteDescription(desc);
-
                         const answer = await pc.createAnswer();
                         await pc.setLocalDescription(answer);
-
                         socket.emit("signal", {
                             targetId: sourceId,
                             data: { sdp: pc.localDescription },
                         });
-
-                        // Sau khi đã setRemoteDescription xong → xử lý các ICE pending
-                        if (pendingCandidatesRef.current[sourceId]) {
-                            for (const cand of pendingCandidatesRef.current[sourceId]) {
-                                await pc.addIceCandidate(cand);
-                            }
-                            delete pendingCandidatesRef.current[sourceId];
-                        }
-
                     } else if (desc.type === "answer") {
                         if (pc.signalingState === "have-local-offer") {
                             await pc.setRemoteDescription(desc);
-
-                            if (pendingCandidatesRef.current[sourceId]) {
-                                for (const cand of pendingCandidatesRef.current[sourceId]) {
-                                    await pc.addIceCandidate(cand);
-                                }
-                                delete pendingCandidatesRef.current[sourceId];
-                            }
                         } else {
                             console.warn("⚠️ Skipping unexpected answer, state:", pc.signalingState);
                         }
                     }
                 }
 
+                // 👉 ICE candidate handling
                 if (data.candidate) {
                     if (pc.remoteDescription && pc.remoteDescription.type) {
                         await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
                     } else {
-                        // Đệm lại nếu chưa có remoteDescription
+                        // Candidate đến trước khi SDP → lưu tạm
                         if (!pendingCandidatesRef.current[sourceId]) {
                             pendingCandidatesRef.current[sourceId] = [];
                         }
-                        pendingCandidatesRef.current[sourceId].push(new RTCIceCandidate(data.candidate));
+                        pendingCandidatesRef.current[sourceId].push(
+                            new RTCIceCandidate(data.candidate)
+                        );
                     }
                 }
+
+                // Nếu vừa set xong remoteDescription → thêm các candidate đệm
+                if (pc.remoteDescription && pendingCandidatesRef.current[sourceId]) {
+                    for (const cand of pendingCandidatesRef.current[sourceId]) {
+                        await pc.addIceCandidate(cand);
+                    }
+                    delete pendingCandidatesRef.current[sourceId];
+                }
+
             } catch (err) {
-                console.error("❌ Error handling signal", err);
+                console.error("❌ Lỗi khi xử lý signal:", err);
             }
         });
 
