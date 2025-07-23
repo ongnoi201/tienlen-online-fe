@@ -37,6 +37,7 @@ function App() {
     const [peerConnections, setPeerConnections] = useState({});
     const localStreamRef = useRef(null);
     const [micEnabled, setMicEnabled] = useState(true);
+    const pendingCandidatesRef = useRef({});
 
 
     window.alertify.set('notifier', 'position', 'top-left');
@@ -253,16 +254,13 @@ function App() {
         socket.on("signal", async ({ sourceId, data }) => {
             let pc = peerConnections[sourceId];
 
-            // Nếu đã có nhưng bị đóng → bỏ qua
             if (pc && pc.signalingState === "closed") return;
 
-            // Nếu chưa có thì tạo mới
             if (!pc) {
                 pc = new RTCPeerConnection({
                     iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
                 });
 
-                // Thêm track, ICE, track listener...
                 if (localStreamRef.current) {
                     localStreamRef.current.getTracks().forEach((track) =>
                         pc.addTrack(track, localStreamRef.current)
@@ -293,17 +291,34 @@ function App() {
                     const desc = new RTCSessionDescription(data.sdp);
 
                     if (desc.type === "offer") {
-                        await pc.setRemoteDescription(desc); // 🟢 Quan trọng!
+                        await pc.setRemoteDescription(desc);
+
                         const answer = await pc.createAnswer();
-                        await pc.setLocalDescription(answer); // chỉ hợp lệ sau khi có remote offer
+                        await pc.setLocalDescription(answer);
+
                         socket.emit("signal", {
                             targetId: sourceId,
                             data: { sdp: pc.localDescription },
                         });
+
+                        // Sau khi đã setRemoteDescription xong → xử lý các ICE pending
+                        if (pendingCandidatesRef.current[sourceId]) {
+                            for (const cand of pendingCandidatesRef.current[sourceId]) {
+                                await pc.addIceCandidate(cand);
+                            }
+                            delete pendingCandidatesRef.current[sourceId];
+                        }
+
                     } else if (desc.type === "answer") {
-                        // Chỉ set answer nếu local đang là offer
                         if (pc.signalingState === "have-local-offer") {
                             await pc.setRemoteDescription(desc);
+
+                            if (pendingCandidatesRef.current[sourceId]) {
+                                for (const cand of pendingCandidatesRef.current[sourceId]) {
+                                    await pc.addIceCandidate(cand);
+                                }
+                                delete pendingCandidatesRef.current[sourceId];
+                            }
                         } else {
                             console.warn("⚠️ Skipping unexpected answer, state:", pc.signalingState);
                         }
@@ -311,12 +326,21 @@ function App() {
                 }
 
                 if (data.candidate) {
-                    await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+                    if (pc.remoteDescription && pc.remoteDescription.type) {
+                        await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+                    } else {
+                        // Đệm lại nếu chưa có remoteDescription
+                        if (!pendingCandidatesRef.current[sourceId]) {
+                            pendingCandidatesRef.current[sourceId] = [];
+                        }
+                        pendingCandidatesRef.current[sourceId].push(new RTCIceCandidate(data.candidate));
+                    }
                 }
             } catch (err) {
                 console.error("❌ Error handling signal", err);
             }
         });
+
 
 
         socket.on('pass_turn', onPassTurn);
@@ -660,6 +684,7 @@ function App() {
             localStreamRef.current.getTracks().forEach((track) => track.stop());
             localStreamRef.current = null;
         }
+        pendingCandidatesRef.current = {};
     };
 
 
