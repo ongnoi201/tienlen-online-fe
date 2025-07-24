@@ -287,8 +287,8 @@ function App() {
         socket.on("signal", async ({ sourceId, data }) => {
             let pc = peerConnections[sourceId];
 
-            // Nếu chưa có connection → tạo mới
-            if (!pc) {
+            // Nếu chưa có hoặc đã đóng → tạo mới
+            if (!pc || pc.signalingState === "closed") {
                 pc = new RTCPeerConnection({
                     iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
                 });
@@ -313,7 +313,7 @@ function App() {
                     const remoteAudio = new Audio();
                     remoteAudio.srcObject = event.streams[0];
                     remoteAudio.autoplay = true;
-                    remoteAudio.play();
+                    remoteAudio.play().catch(() => { });
                 };
 
                 setPeerConnections((prev) => ({ ...prev, [sourceId]: pc }));
@@ -337,6 +337,14 @@ function App() {
                             await pc.setRemoteDescription(desc);
                         } else {
                             console.warn("⚠️ Skipping unexpected answer, state:", pc.signalingState);
+                            // 🔁 Reset lại peerConnection để tránh kẹt kết nối
+                            try {
+                                pc.close();
+                            } catch { }
+                            const updatedConnections = { ...peerConnections };
+                            delete updatedConnections[sourceId];
+                            setPeerConnections(updatedConnections);
+                            return;
                         }
                     }
                 }
