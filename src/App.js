@@ -223,18 +223,26 @@ function App() {
         socket.on('left_room', onLeftRoom);
 
         socket.on('new_peer', async ({ peerId }) => {
-            if (!localStreamRef.current || peerConnections[peerId]) return;
+            if (!localStreamRef.current) return;
+
+            const existingPC = peerConnections[peerId];
+
+            // Nếu đã có nhưng kết nối đã đóng → xóa
+            if (existingPC && existingPC.signalingState === "closed") {
+                delete peerConnections[peerId];
+            }
+
+            // Nếu vẫn còn kết nối hợp lệ, bỏ qua
+            if (peerConnections[peerId]) return;
 
             const pc = new RTCPeerConnection({
                 iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
             });
 
-            // Add local audio tracks
             localStreamRef.current.getTracks().forEach((track) =>
                 pc.addTrack(track, localStreamRef.current)
             );
 
-            // ICE Candidate
             pc.onicecandidate = (event) => {
                 if (event.candidate) {
                     socket.emit('signal', {
@@ -244,7 +252,6 @@ function App() {
                 }
             };
 
-            // Track handler
             pc.ontrack = (event) => {
                 const remoteAudio = new Audio();
                 remoteAudio.srcObject = event.streams[0];
@@ -254,7 +261,6 @@ function App() {
 
             setPeerConnections((prev) => ({ ...prev, [peerId]: pc }));
 
-            // ❗ Xác định ai tạo offer
             const isInitiator = myId > peerId;
 
             if (isInitiator) {
@@ -270,6 +276,7 @@ function App() {
                 }
             }
         });
+
 
 
         socket.on("signal", async ({ sourceId, data }) => {
