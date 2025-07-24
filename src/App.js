@@ -277,8 +277,6 @@ function App() {
             }
         });
 
-
-
         socket.on("signal", async ({ sourceId, data }) => {
             let pc = peerConnections[sourceId];
 
