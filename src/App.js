@@ -386,6 +386,8 @@ function App() {
             socket.off('left_room', onLeftRoom);
             socket.off('pass_turn', onPassTurn);
             socket.off('update_players');
+            socket.off('new_peer');
+            socket.off('signal');
             if (interval) clearInterval(interval);
         };
     }, [roomId, myId, token]);
