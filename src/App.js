@@ -223,26 +223,64 @@ function App() {
         socket.on('left_room', onLeftRoom);
 
         socket.on('new_peer', async ({ peerId }) => {
-            // Luôn xóa kết nối cũ nếu có
-            if (peerConnections[peerId]) {
-                try {
-                    peerConnections[peerId].close();
-                } catch { }
+            if (!localStreamRef.current) return;
+
+            const existingPC = peerConnections[peerId];
+
+            // Nếu đã có peerConnection nhưng đã đóng, xóa đi
+            if (existingPC && existingPC.signalingState === "closed") {
                 delete peerConnections[peerId];
             }
 
-            const peerConnection = createPeerConnection(peerId);
-            peerConnections[peerId] = peerConnection;
-
-            if (localStreamRef.current) {
-                localStreamRef.current.getTracks().forEach(track => {
-                    peerConnection.addTrack(track, localStreamRef.current);
-                });
+            // 🛠️ NEW: Nếu đã tồn tại peerConnection → đóng và tạo lại
+            if (existingPC) {
+                try {
+                    existingPC.close();
+                } catch (e) { }
+                delete peerConnections[peerId];
             }
 
-            const offer = await peerConnection.createOffer();
-            await peerConnection.setLocalDescription(offer);
-            socket.emit('signal', { targetId: peerId, data: offer });
+            const pc = new RTCPeerConnection({
+                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+            });
+
+            // Add local audio
+            localStreamRef.current.getTracks().forEach((track) =>
+                pc.addTrack(track, localStreamRef.current)
+            );
+
+            pc.onicecandidate = (event) => {
+                if (event.candidate) {
+                    socket.emit('signal', {
+                        targetId: peerId,
+                        data: { candidate: event.candidate },
+                    });
+                }
+            };
+
+            pc.ontrack = (event) => {
+                const remoteAudio = new Audio();
+                remoteAudio.srcObject = event.streams[0];
+                remoteAudio.autoplay = true;
+                remoteAudio.play().catch(() => { });
+            };
+
+            setPeerConnections((prev) => ({ ...prev, [peerId]: pc }));
+
+            const isInitiator = myId > peerId;
+
+            if (isInitiator) {
+                try {
+                    const offer = await pc.createOffer();
+                    await pc.setLocalDescription(offer);
+                    socket.emit("signal", {
+                        targetId: peerId,
+                        data: { sdp: pc.localDescription },
+                    });
+                } catch (err) {
+                    console.error("❌ Error creating offer:", err);
+                }
+            }
         });
 
 
